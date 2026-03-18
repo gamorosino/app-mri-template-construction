@@ -119,8 +119,16 @@ INPUT_LIST="${INPUT_PATHS[@]}"
 
 echo -e "${GREEN}[INFO]${NC} Running ANTs template construction in Singularity container..."
 
-# Build the ANTs command
-ANTS_CMD="antsMultivariateTemplateConstruction2.sh \
+# Build the input files string
+INPUT_FILES=$(printf '%s ' "${INPUT_PATHS[@]}")
+
+# Run in Singularity container (assuming 'ants' image is available)
+# Note: Update the image path if using a different container location
+singularity exec \
+    --bind "$WORK_DIR:/tmp/ants_template_construction" \
+    --bind "$PWD/template:/tmp/ants_output" \
+    docker://antsx/ants:latest \
+    antsMultivariateTemplateConstruction2.sh \
     -d 3 \
     -i $ITERATIONS \
     -k 1 \
@@ -131,15 +139,7 @@ ANTS_CMD="antsMultivariateTemplateConstruction2.sh \
     -m $METRIC \
     -c 0 \
     -o /tmp/ants_output/FA_template \
-    $(printf '%s ' "${INPUT_PATHS[@]}")"
-
-# Run in Singularity container (assuming 'ants' image is available)
-# Note: Update the image path if using a different container location
-singularity exec \
-    --bind "$WORK_DIR:/tmp/ants_template_construction" \
-    --bind "$PWD/template:/tmp/ants_output" \
-    docker://antsx/ants:latest \
-    bash -c "$ANTS_CMD"
+    $INPUT_FILES
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}[ERROR]${NC} ANTs command failed!"
