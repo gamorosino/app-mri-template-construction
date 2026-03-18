@@ -1,0 +1,170 @@
+#!/bin/bash
+#PBS -l nodes=1:ppn=8,walltime=1:59:00
+#PBS -N mri-template-construction
+#PBS -l vmem=16gb
+#PBS -V
+
+# Brainlife ANTs Template Construction Main Script
+# Reads T1w images from config.json and creates a group template using ANTs
+
+set -e  # Exit on error
+
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}[INFO]${NC} Starting ANTs Template Construction..."
+
+# ============================================================================
+# 1. Validate and read config.json
+# ============================================================================
+
+if [ ! -f "config.json" ]; then
+    echo -e "${RED}[ERROR]${NC} config.json not found!"
+    exit 1
+fi
+
+echo -e "${GREEN}[INFO]${NC} Reading configuration from config.json..."
+
+# Extract images array from config.json
+IMAGES=$(jq -r '.images[]' config.json 2>/dev/null)
+
+if [ -z "$IMAGES" ]; then
+    echo -e "${RED}[ERROR]${NC} No images found in config.json!"
+    exit 1
+fi
+
+# Convert to array
+mapfile -t IMAGE_ARRAY <<< "$IMAGES"
+NUM_IMAGES=${#IMAGE_ARRAY[@]}
+
+echo -e "${GREEN}[INFO]${NC} Found $NUM_IMAGES input image(s)"
+
+# ============================================================================
+# 2. Validate input files exist
+# ============================================================================
+
+echo -e "${GREEN}[INFO]${NC} Validating input files..."
+
+declare -a VALIDATED_IMAGES
+
+for img in "${IMAGE_ARRAY[@]}"; do
+    if [ -f "$img" ]; then
+        VALIDATED_IMAGES+=("$(readlink -f "$img")")
+        echo -e "${GREEN}[OK]${NC} $img"
+    else
+        echo -e "${RED}[ERROR]${NC} Image not found: $img"
+        exit 1
+    fi
+done
+
+# ============================================================================
+# 3. Create output directory structure
+# ============================================================================
+
+mkdir -p ./template
+mkdir -p ./warped
+mkdir -p ./transforms
+
+echo -e "${GREEN}[INFO]${NC} Output directories created"
+
+# ============================================================================
+# 4. Read optional parameters from config.json
+# ============================================================================
+
+ITERATIONS=$(jq -r '.iterations // 2' config.json)
+METRIC=$(jq -r '.metric // "CC"' config.json)
+TRANSFORM=$(jq -r '.transform // "SyN"' config.json)
+CORES=$(jq -r '.cores // 1' config.json)
+
+echo -e "${GREEN}[INFO]${NC} Configuration: iterations=$ITERATIONS, metric=$METRIC, transform=$TRANSFORM, cores=$CORES"
+
+# ============================================================================
+# 5. Prepare working directory inside container
+# ============================================================================
+
+WORK_DIR="/tmp/ants_template_construction"
+mkdir -p "$WORK_DIR/inputs"
+
+# Copy input files to working directory
+echo -e "${GREEN}[INFO]${NC} Preparing input files..."
+declare -a INPUT_PATHS
+
+for i in "${!VALIDATED_IMAGES[@]}"; do
+    SRC="${VALIDATED_IMAGES[$i]}"
+    DEST="$WORK_DIR/inputs/input_$i.nii.gz"
+    cp "$SRC" "$DEST"
+    INPUT_PATHS+=("$DEST")
+    echo -e "${GREEN}[OK]${NC} Copied input $i"
+done
+
+# ============================================================================
+# 6. Build input file list for ANTs command
+# ============================================================================
+
+INPUT_LIST="${INPUT_PATHS[@]}"
+
+# ============================================================================
+# 7. Run ANTs in Singularity container
+# ============================================================================
+
+echo -e "${GREEN}[INFO]${NC} Running ANTs template construction in Singularity container..."
+
+# Build the ANTs command
+ANTS_CMD="antsMultivariateTemplateConstruction2.sh \
+    -d 3 \
+    -i $ITERATIONS \
+    -k 1 \
+    -f 4x2x1 \
+    -s 2x1x0vox \
+    -q 30x20x4 \
+    -t $TRANSFORM \
+    -m $METRIC \
+    -c 0 \
+    -o /tmp/ants_output/FA_template \
+    $(printf '%s ' "${INPUT_PATHS[@]}")"
+
+# Run in Singularity container (assuming 'ants' image is available)
+# Note: Update the image path if using a different container location
+singularity exec \
+    --bind "$WORK_DIR:/tmp/ants_template_construction" \
+    --bind "$PWD/template:/tmp/ants_output" \
+    docker://antsx/ants:latest \
+    bash -c "$ANTS_CMD"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}[ERROR]${NC} ANTs command failed!"
+    exit 1
+fi
+
+# ============================================================================
+# 8. Post-process outputs
+# ============================================================================
+
+echo -e "${GREEN}[INFO]${NC} Processing outputs..."
+
+# Move final template to expected location
+if [ -f "./template/FA_template_template.nii.gz" ]; then
+    mv "./template/FA_template_template.nii.gz" "./template/t1w.nii.gz"
+    echo -e "${GREEN}[OK]${NC} Final template saved to ./template/t1w.nii.gz"
+else
+    echo -e "${RED}[ERROR]${NC} Template output not found!"
+    exit 1
+fi
+
+# ============================================================================
+# 9. Cleanup and finish
+# ============================================================================
+
+rm -rf "$WORK_DIR"
+
+echo -e "${GREEN}[SUCCESS]${NC} Template construction completed!"
+echo -e "${GREEN}[INFO]${NC} Output files:"
+echo -e "${GREEN}  - ./template/t1w.nii.gz${NC} (Final template)"
+if [ -f "./template/FA_template_iteration_template.nii.gz" ]; then
+    echo -e "${GREEN}  - ./template/ (Iteration templates available)${NC}"
+fi
+
+exit 0
