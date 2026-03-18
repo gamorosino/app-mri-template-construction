@@ -77,7 +77,14 @@ echo -e "${GREEN}[INFO]${NC} Output directories created"
 ITERATIONS=$(jq -r '.iterations // 2' config.json)
 METRIC=$(jq -r '.metric // "CC"' config.json)
 TRANSFORM=$(jq -r '.transform // "SyN"' config.json)
-CORES=$(jq -r '.cores // 1' config.json)
+
+# Default cores to number of available processors if not specified in config
+CORES_CONFIG=$(jq -r '.cores // empty' config.json)
+if [ -z "$CORES_CONFIG" ] || [ "$CORES_CONFIG" = "null" ]; then
+    CORES=$(nproc)
+else
+    CORES=$CORES_CONFIG
+fi
 
 echo -e "${GREEN}[INFO]${NC} Configuration: iterations=$ITERATIONS, metric=$METRIC, transform=$TRANSFORM, cores=$CORES"
 
