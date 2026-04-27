@@ -63,7 +63,7 @@ done
 # ============================================================================
 # 3. Create output directory structure
 # ============================================================================
-
+mkdir -p ./output
 mkdir -p ./template
 mkdir -p ./warped
 mkdir -p ./transforms
@@ -156,11 +156,12 @@ echo -e "${GREEN}[INFO]${NC} Processing outputs..."
 # antsMultivariateTemplateConstruction2.sh usually creates:
 # template_template0.nii.gz, template_template1.nii.gz, ...
 # We take the most recent/final one.
+
 FINAL_TEMPLATE=$(ls ./template/template_template*.nii.gz 2>/dev/null | sort -V | tail -n 1)
 
 if [ -n "$FINAL_TEMPLATE" ] && [ -f "$FINAL_TEMPLATE" ]; then
-    cp "$FINAL_TEMPLATE" "./template/${OUTPUT_BASENAME}"
-    echo -e "${GREEN}[OK]${NC} Final template saved to ./template/${OUTPUT_BASENAME}"
+    cp "$FINAL_TEMPLATE" "./output/${OUTPUT_BASENAME}"
+    echo -e "${GREEN}[OK]${NC} Final template saved to ./output/${OUTPUT_BASENAME}"
 else
     echo -e "${RED}[ERROR]${NC} Template output not found!"
     exit 1
@@ -174,7 +175,7 @@ rm -rf "$WORK_DIR"
 
 echo -e "${GREEN}[SUCCESS]${NC} Template construction completed!"
 echo -e "${GREEN}[INFO]${NC} Output files:"
-echo -e "${GREEN}  - ./template/${OUTPUT_BASENAME}${NC} (Final template)"
+echo -e "${GREEN}  - ./output/${OUTPUT_BASENAME}${NC} (Final template)"
 echo -e "${GREEN}  - ./template/template_template*.nii.gz${NC} (Intermediate/final ANTs templates, if generated)"
 
 exit 0
